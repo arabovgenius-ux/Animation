@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Widgets</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    /* Переливающаяся рамка для постоянного движения пикселей по периметру */
+    .neon-border {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      border: 5px solid #ff0055;
+      box-sizing: border-box;
+      pointer-events: none;
+      animation: neonGlow 1.5s infinite alternate;
+      z-index: 100;
+    }
+
+    @keyframes neonGlow {
+      0% {
+        border-color: #ff0055;
+        box-shadow: inset 0 0 10px #ff0055, 0 0 10px #ff0055;
+      }
+      50% {
+        border-color: #00ffcc;
+        box-shadow: inset 0 0 20px #00ffcc, 0 0 20px #00ffcc;
+      }
+      100% {
+        border-color: #ffcc00;
+        box-shadow: inset 0 0 10px #ffcc00, 0 0 10px #ffcc00;
+      }
+    }
+
+    /* Анимированная надпись ПОДПИШИТЕСЬ */
+    .sub-banner {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #ff0055, #ffcc00);
+      color: #fff;
+      padding: 8px 24px;
+      border-radius: 20px;
+      font-family: Arial, sans-serif;
+      font-weight: 900;
+      font-size: 16px;
+      letter-spacing: 1.5px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+      pointer-events: none;
+      animation: pulseText 1s infinite ease-in-out;
+      z-index: 101;
+      border: 2px solid #fff;
+    }
+
+    @keyframes pulseText {
+      0%, 100% { transform: translateX(-50%) scale(1); }
+      50% { transform: translateX(-50%) scale(1.05); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="neon-border"></div>
+  <div class="sub-banner">ПОДПИШИТЕСЬ</div>
+
+</body>
+</html>
