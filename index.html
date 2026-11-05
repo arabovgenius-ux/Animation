@@ -7,16 +7,15 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #09090b;
-      color: #fff;
+      background: #09090b; color: #fff;
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       min-height: 100vh; padding: 20px;
     }
     .video-wrapper {
-      position: relative; width: 100%; max-width: 640px; aspect-ratio: 16 / 9;
-      background: #000; border-radius: 16px; overflow: hidden;
-      box-shadow: 0 10px 30px rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.1);
+      width: 100%; max-width: 640px; aspect-ratio: 16 / 9; background: #000;
+      border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,.1);
+      box-shadow: 0 10px 30px rgba(0,0,0,.5);
     }
     video { width: 100%; height: 100%; object-fit: cover; display: block; }
     canvas { display: none; }
@@ -35,150 +34,131 @@
   <div class="video-wrapper">
     <video id="pipVideo" autoplay loop muted playsinline></video>
   </div>
-
-  <canvas id="stage" width="1280" height="720"></canvas>
+  <canvas id="stage" width="480" height="270"></canvas>
 
   <button class="pip-btn" id="btn" onclick="togglePiP()">ОТКРЫТЬ В ПЛАВАЮЩЕМ ОКНЕ</button>
   <div id="msg"></div>
 
   <script>
-    const W = 1280, H = 720;
+    // ВСЁ рисуется заново в каждом кадре, прямо в реальном времени:
+    // фон, провод, лампочки, свечение, плашка и текст. Никаких заготовок, кэша и записи.
+    const W = 480, H = 270, FRAME_MS = 50;           // 16:9, низкое качество, ~20 FPS
     const canvas = document.getElementById('stage');
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
     const video = document.getElementById('pipVideo');
     const btn = document.getElementById('btn');
     const msg = document.getElementById('msg');
 
-    const COLORS = [[255,45,85],[255,204,0],[52,199,89],[0,199,255],[94,92,230],[255,149,0],[255,61,208]];
+    const COL = ['#ff2d55', '#ffcc00', '#34c759', '#00c7ff', '#5e5ce6', '#ff9500', '#ff3dd0'];
+    const N = 40, M = 14;                             // лампочек по периметру, отступ
+    const PW = W - 2 * M, PH = H - 2 * M, PER = 2 * (PW + PH);
+    const RW = 340, RH = 72;                         // размер плашки
 
-    // ---------- Предрендер: спрайты лампочек (свечение рисуется 1 раз, а не каждый кадр) ----------
-    const R = 15, S = R * 5;               // радиус лампочки и размер спрайта
-    const sprites = COLORS.map(([r, g, b]) => {
-      const c = document.createElement('canvas'); c.width = c.height = S;
-      const x = c.getContext('2d');
-      const grad = x.createRadialGradient(S/2, S/2, 0, S/2, S/2, S/2);
-      grad.addColorStop(0,    'rgba(255,255,255,1)');
-      grad.addColorStop(0.18, `rgba(${r},${g},${b},1)`);
-      grad.addColorStop(0.35, `rgba(${r},${g},${b},.55)`);
-      grad.addColorStop(1,    `rgba(${r},${g},${b},0)`);
-      x.fillStyle = grad; x.fillRect(0, 0, S, S);
-      return c;
-    });
+    let X = 0, Y = 0;                                 // точка на периметре (считается на лету)
+    function onPerimeter(d) {
+      if (d < PW) { X = M + d; Y = M; return; }
+      d -= PW; if (d < PH) { X = W - M; Y = M + d; return; }
+      d -= PH; if (d < PW) { X = W - M - d; Y = H - M; return; }
+      d -= PW; X = M; Y = H - M - d;
+    }
 
-    // ---------- Позиции лампочек по периметру ----------
-    const M = 34, STEP = 52, bulbs = [];
-    const add = (x, y) => bulbs.push({ x, y, p: bulbs.length, c: bulbs.length % COLORS.length });
-    const nx = Math.round((W - 2*M) / STEP), ny = Math.round((H - 2*M) / STEP);
-    for (let i = 0; i < nx; i++) add(M + (W - 2*M) * i / nx, M);
-    for (let i = 0; i < ny; i++) add(W - M, M + (H - 2*M) * i / ny);
-    for (let i = 0; i < nx; i++) add(W - M - (W - 2*M) * i / nx, H - M);
-    for (let i = 0; i < ny; i++) add(M, H - M - (H - 2*M) * i / ny);
-
-    // ---------- Статичный слой: фон + провод (рисуется один раз) ----------
-    const bg = document.createElement('canvas'); bg.width = W; bg.height = H;
-    (() => {
-      const b = bg.getContext('2d');
-      b.fillStyle = '#050508'; b.fillRect(0, 0, W, H);
-      b.strokeStyle = '#26202f'; b.lineWidth = 4;
-      b.strokeRect(M, M, W - 2*M, H - 2*M);
-    })();
-
-    // ---------- Кадр ----------
+    let last = 0;
     function draw(now) {
+      if (now - last < FRAME_MS - 3) return;          // не чаще ~30 FPS
+      last = now;
       const t = now / 1000;
+
+      // фон и провод
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1;
-      ctx.drawImage(bg, 0, 0);
+      ctx.fillStyle = '#050508';
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = '#26202f';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(M, M, PW, PH);
 
-      // Гирлянда: 3 режима, меняются каждые 6 сек
-      const mode = Math.floor(t / 6) % 3;
+      // гирлянда: считаем и рисуем каждую лампочку сейчас
+      const mode = (t / 6 | 0) % 3;                   // режим меняется каждые 6 сек
       ctx.globalCompositeOperation = 'lighter';
-      for (let i = 0; i < bulbs.length; i++) {
-        const b = bulbs[i];
-        let a, ci = b.c;
-        if (mode === 0)      a = 0.3 + 0.7 * Math.abs(Math.sin(t * 3 - b.p * 0.45));          // бегущая волна
-        else if (mode === 1) a = ((Math.floor(t * 3) + b.p) & 1) ? 1 : 0.15;                  // шахматное мигание
-        else { a = 0.5 + 0.5 * Math.sin(t * 5 + b.p * 1.7); ci = (b.c + Math.floor(t * 2)) % COLORS.length; } // хаос
-        ctx.globalAlpha = a;
-        ctx.drawImage(sprites[ci], b.x - S/2, b.y - S/2);
+      for (let i = 0; i < N; i++) {
+        let a, ci = i % 7;
+        if (mode === 0)      a = .3 + .7 * Math.abs(Math.sin(t * 3 - i * .45));      // бегущая волна
+        else if (mode === 1) a = (((t * 3 | 0) + i) & 1) ? 1 : .15;                  // шахматное мигание
+        else { a = .5 + .5 * Math.sin(t * 5 + i * 1.7); ci = (i + (t * 2 | 0)) % 7; } // хаос
+        onPerimeter(i * PER / N);
+        ctx.fillStyle = COL[ci];
+        ctx.globalAlpha = a * .18; ctx.beginPath(); ctx.arc(X, Y, 12, 0, 6.2832); ctx.fill();  // свечение
+        ctx.globalAlpha = a * .45; ctx.beginPath(); ctx.arc(X, Y, 7, 0, 6.2832); ctx.fill();
+        ctx.globalAlpha = a;       ctx.beginPath(); ctx.arc(X, Y, 4, 0, 6.2832);  ctx.fill();  // лампочка
+        ctx.fillStyle = '#fff';
+        ctx.globalAlpha = a * .9;  ctx.beginPath(); ctx.arc(X, Y, 1.5, 0, 6.2832);  ctx.fill();  // блик
       }
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
 
-      // Пульсирующая плашка с неоновой подсветкой
-      const hue = (t * 80) % 360;
-      const pulse = 1 + Math.sin(t * 3) * 0.04;
+      // плашка "ПОДПИШИТЕСЬ": пульсация, радужное свечение, текст
+      const hue = (t * 80) % 360, k = 1 + Math.sin(t * 3) * .04;
       ctx.save();
       ctx.translate(W / 2, H / 2);
-      ctx.scale(pulse, pulse);
-
-      const rw = 700, rh = 150;
-      ctx.fillStyle = '#ff0055';
-      ctx.shadowColor = `hsl(${hue},100%,55%)`;
-      ctx.shadowBlur = 40;
+      ctx.scale(k, k);
       ctx.beginPath();
-      ctx.roundRect(-rw/2, -rh/2, rw, rh, 40);
-      ctx.fill();
-
-      ctx.shadowBlur = 0;
-      ctx.lineWidth = 6;
-      ctx.strokeStyle = `hsl(${(hue + 180) % 360},100%,65%)`;
-      ctx.stroke();
-
+      ctx.roundRect(-RW / 2, -RH / 2, RW, RH, 18);
+      ctx.strokeStyle = `hsla(${hue},100%,55%,.14)`; ctx.lineWidth = 18; ctx.stroke();
+      ctx.lineWidth = 12; ctx.stroke();
+      ctx.strokeStyle = `hsla(${hue},100%,60%,.35)`; ctx.lineWidth = 6; ctx.stroke();
+      ctx.fillStyle = '#ff0055'; ctx.fill();
+      ctx.strokeStyle = `hsl(${(hue + 180) % 360},100%,65%)`; ctx.lineWidth = 3; ctx.stroke();
       ctx.fillStyle = '#fff';
-      ctx.font = '900 84px "Arial Black", Arial, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('ПОДПИШИТЕСЬ', 0, 6);
+      ctx.font = '900 38px "Arial Black", Arial, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText("ПОДПИШИТЕСЬ", 0, 2);
       ctx.restore();
+
+      if (track.requestFrame) track.requestFrame();   // кадр уходит в живой поток сразу после отрисовки
     }
 
-    // ---------- Таймер, который не засыпает в фоне ----------
-    // requestAnimationFrame останавливается, когда вкладка скрыта (а в PiP она как раз скрыта).
-    // Поэтому кадры считает Web Worker-таймер: он работает и при свёрнутой вкладке.
-    let tick;
-    try {
-      const url = URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),33)'], { type: 'text/javascript' }));
-      const worker = new Worker(url);
-      worker.onmessage = () => draw(performance.now());
-      tick = worker;
-    } catch (e) {
-      const loop = t => { draw(t); requestAnimationFrame(loop); };
-      requestAnimationFrame(loop);
-    }
-    draw(performance.now());
-
-    // ---------- Поток canvas -> video ----------
-    video.srcObject = canvas.captureStream(30);
+    // ---------- Живой поток canvas -> video ----------
+    const hasReq = 'requestFrame' in CanvasCaptureMediaStreamTrack.prototype;
+    const stream = canvas.captureStream(hasReq ? 0 : 20);
+    const track = stream.getVideoTracks()[0];
+    video.srcObject = stream;
     video.play().catch(() => {});
 
-    // ---------- PiP ----------
-    function setBtn() {
-      const on = document.pictureInPictureElement === video || video.webkitPresentationMode === 'picture-in-picture';
-      btn.textContent = on ? 'ЗАКРЫТЬ ПЛАВАЮЩЕЕ ОКНО' : 'ОТКРЫТЬ В ПЛАВАЮЩЕМ ОКНЕ';
-    }
-    video.addEventListener('enterpictureinpicture', setBtn);
-    video.addEventListener('leavepictureinpicture', setBtn);
-    video.addEventListener('webkitpresentationmodechanged', setBtn);
+    // ---------- Таймер: Worker (не засыпает в фоне) + автопауза, когда никто не смотрит ----------
+    let worker = null, running = false;
+    const workerURL = (() => { try { return URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),' + FRAME_MS + ')'])); } catch (e) { return null; } })();
 
+    function start() {
+      if (running) return; running = true;
+      if (workerURL) { try { worker = new Worker(workerURL); worker.onmessage = () => draw(performance.now()); return; } catch (e) {} }
+      const loop = t => { if (!running) return; draw(t); requestAnimationFrame(loop); };
+      requestAnimationFrame(loop);
+    }
+    function stop() { running = false; if (worker) { worker.terminate(); worker = null; } }
+
+    const inPip = () => document.pictureInPictureElement === video || video.webkitPresentationMode === 'picture-in-picture';
+    function sync() {
+      (document.hidden && !inPip()) ? stop() : start();   // скрыто и без PiP -> расчёты полностью стоят
+      btn.textContent = inPip() ? 'ЗАКРЫТЬ ПЛАВАЮЩЕЕ ОКНО' : 'ОТКРЫТЬ В ПЛАВАЮЩЕМ ОКНЕ';
+    }
+    document.addEventListener('visibilitychange', sync);
+    video.addEventListener('enterpictureinpicture', sync);
+    video.addEventListener('leavepictureinpicture', sync);
+    video.addEventListener('webkitpresentationmodechanged', sync);
+    draw(performance.now()); sync();
+
+    // ---------- PiP ----------
     async function togglePiP() {
       try {
         await video.play().catch(() => {});
-        if (document.pictureInPictureElement) {
-          await document.exitPictureInPicture();
-        } else if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
-          await video.requestPictureInPicture();
-        } else if (video.webkitSetPresentationMode) {            // Safari / iOS
-          video.webkitSetPresentationMode(
-            video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
-        } else {
-          throw new Error('PiP не поддерживается');
-        }
+        if (document.pictureInPictureElement) await document.exitPictureInPicture();
+        else if (document.pictureInPictureEnabled && video.requestPictureInPicture) await video.requestPictureInPicture();
+        else if (video.webkitSetPresentationMode)
+          video.webkitSetPresentationMode(video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+        else throw 0;
         msg.textContent = '';
-      } catch (err) {
-        msg.textContent = 'Не удалось открыть PiP. Откройте файл в Chrome / Edge / Safari.';
-      }
-      setBtn();
+      } catch (e) { msg.textContent = 'Не удалось открыть PiP. Откройте файл в Chrome / Edge / Safari.'; }
+      sync();
     }
   </script>
 </body>
