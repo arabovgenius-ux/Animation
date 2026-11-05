@@ -1,30 +1,160 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>W</title>
-  <style>
-    body, html {
-      margin: 0; padding: 0; width: 100%; height: 100%;
-      background: #000; overflow: hidden;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .box {
-      width: 100vw; height: 100vh;
-      border: 8px solid #ff0055;
-      box-sizing: border-box;
-      display: flex; align-items: center; justify-content: center;
-    }
-    h1 {
-      color: #fff; font-family: Arial; font-size: 32px; font-weight: 900;
-      background: #ff0055; padding: 12px 24px; border-radius: 12px;
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ПОДПИШИТЕСЬ — гирлянда</title>
+<style>
+  :root { color-scheme: dark; --bg:#0a0612; --fg:#f4efff; --btn:#ff3d81; }
+  html,body { height:100%; margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,sans-serif; }
+  body { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:16px; box-sizing:border-box; }
+  #stage { width:min(92vw, 640px); aspect-ratio:16/9; }
+  canvas { display:block; width:100%; height:100%; border-radius:10px; background:#000; }
+  button { font:600 16px system-ui,sans-serif; padding:12px 22px; border:0; border-radius:999px; background:var(--btn); color:#fff; cursor:pointer; }
+  button:focus-visible { outline:3px solid #fff; outline-offset:3px; }
+  #hint { font-size:13px; opacity:.7; text-align:center; max-width:520px; min-height:1.2em; }
+</style>
 </head>
 <body>
-  <div class="box">
-    <h1>ПОДПИШИТЕСЬ</h1>
-  </div>
+<div id="stage"><canvas id="c" width="640" height="360"></canvas></div>
+<button id="open">Открыть в мини-окне</button>
+<div id="hint"></div>
+
+<script>
+(() => {
+  'use strict';
+  const TEXT = 'ПОДПИШИТЕСЬ';
+  const COLORS = ['#ff2d55','#ffcc00','#34c759','#00c7ff','#5e5ce6','#ff9500','#ff3dd0'];
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Рисовальщик: один и тот же код работает и в основном окне, и в мини-окне.
+  // Всё считается из времени (t) — никакой записи, только реальное время.
+  function createRenderer(canvas) {
+    const ctx = canvas.getContext('2d', { alpha: false });
+    let w = 0, h = 0, bulbs = [], bg = null, raf = 0, stopped = false, lastW = 0, lastH = 0;
+    const win = canvas.ownerDocument.defaultView;
+
+    function layout() {
+      const dpr = Math.min(win.devicePixelRatio || 1, 2);
+      const cw = Math.max(40, canvas.clientWidth), ch = Math.max(40, canvas.clientHeight);
+      if (cw === lastW && ch === lastH) return;
+      lastW = cw; lastH = ch;
+      canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      w = cw; h = ch;
+
+      // лампочки по периметру
+      const m = Math.max(10, Math.min(w, h) * 0.055);
+      const step = Math.max(22, Math.min(w, h) * 0.085);
+      const r = Math.max(4, step * 0.28);
+      bulbs = [];
+      const add = (x, y) => bulbs.push({ x, y, r, c: bulbs.length % COLORS.length, p: bulbs.length });
+      const nx = Math.max(2, Math.round((w - 2*m) / step)), ny = Math.max(2, Math.round((h - 2*m) / step));
+      for (let i = 0; i < nx; i++) add(m + (w - 2*m) * i / nx, m);
+      for (let i = 0; i < ny; i++) add(w - m, m + (h - 2*m) * i / ny);
+      for (let i = 0; i < nx; i++) add(w - m - (w - 2*m) * i / nx, h - m);
+      for (let i = 0; i < ny; i++) add(m, h - m - (h - 2*m) * i / ny);
+
+      // Статичный слой (фон + провод) — рисуется один раз, а не каждый кадр
+      bg = canvas.ownerDocument.createElement('canvas');
+      bg.width = canvas.width; bg.height = canvas.height;
+      const b = bg.getContext('2d');
+      b.setTransform(dpr, 0, 0, dpr, 0, 0);
+      b.fillStyle = '#0a0612'; b.fillRect(0, 0, w, h);
+      b.strokeStyle = '#2a2438'; b.lineWidth = 2; b.beginPath();
+      b.rect(m, m, w - 2*m, h - 2*m); b.stroke();
+    }
+
+    function frame(now) {
+      if (stopped) return;
+      layout();
+      const t = now / 1000;
+      ctx.drawImage(bg, 0, 0, w, h);
+
+      // Гирлянда: бегущая волна яркости + смена цвета (режим меняется каждые 6 сек)
+      const mode = Math.floor(t / 6) % 3;
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < bulbs.length; i++) {
+        const b = bulbs[i];
+        let a, ci = b.c;
+        if (reduce) a = 0.85;
+        else if (mode === 0) a = 0.35 + 0.65 * Math.abs(Math.sin(t * 3 - b.p * 0.45));       // бегущая волна
+        else if (mode === 1) a = ((Math.floor(t * 3) + b.p) % 2) ? 1 : 0.2;                  // шахматное мигание
+        else { a = 0.5 + 0.5 * Math.sin(t * 5 + b.p * 1.7); ci = (b.c + Math.floor(t * 2)) % COLORS.length; } // хаос
+        ctx.globalAlpha = a;
+        ctx.fillStyle = COLORS[ci];
+        ctx.shadowColor = COLORS[ci];
+        ctx.shadowBlur = b.r * 2.2;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.2832); ctx.fill();
+      }
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+
+      // Надпись: пульсация + плавающая радужная подсветка
+      const fs = Math.min(w * 0.115, h * 0.2);
+      const pulse = reduce ? 1 : 1 + Math.sin(t * 3) * 0.04;
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.scale(pulse, pulse);
+      ctx.font = `900 ${fs}px "Arial Black", Impact, system-ui, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const hue = (t * 90) % 360;
+      ctx.shadowColor = `hsl(${hue},100%,60%)`;
+      ctx.shadowBlur = fs * 0.5;
+      ctx.lineWidth = fs * 0.08; ctx.strokeStyle = `hsl(${(hue + 180) % 360},100%,55%)`;
+      ctx.strokeText(TEXT, 0, 0);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fff';
+      ctx.fillText(TEXT, 0, 0);
+      ctx.restore();
+
+      raf = win.requestAnimationFrame(frame);
+    }
+
+    raf = win.requestAnimationFrame(frame);
+    return { stop() { stopped = true; win.cancelAnimationFrame(raf); } };
+  }
+
+  const main = createRenderer(document.getElementById('c'));
+  const hint = document.getElementById('hint');
+  const btn = document.getElementById('open');
+  let mini = null; // { win, renderer }
+
+  const css = 'html,body{margin:0;height:100%;background:#0a0612;overflow:hidden}canvas{display:block;width:100%;height:100%}';
+
+  function mount(targetWin) {
+    const d = targetWin.document;
+    d.title = 'ПОДПИШИТЕСЬ';
+    d.head.insertAdjacentHTML('beforeend', '<style>' + css + '</style>');
+    const c = d.createElement('canvas');
+    d.body.appendChild(c);
+    const renderer = createRenderer(c);
+    const close = () => { renderer.stop(); mini = null; btn.textContent = 'Открыть в мини-окне'; };
+    targetWin.addEventListener('pagehide', close, { once: true });
+    mini = { win: targetWin, renderer };
+    btn.textContent = 'Закрыть мини-окно';
+  }
+
+  async function openMini() {
+    // 1) Лучший вариант: Document Picture-in-Picture (Chrome/Edge) — окно поверх всех
+    if ('documentPictureInPicture' in window) {
+      try {
+        const pip = await documentPictureInPicture.requestWindow({ width: 360, height: 200 });
+        mount(pip); hint.textContent = 'Окно «картинка в картинке» — остаётся поверх других окон.';
+        return;
+      } catch (e) { /* пробуем обычный popup */ }
+    }
+    // 2) Запасной: обычное всплывающее окно
+    const p = window.open('', 'podpishites', 'popup=yes,width=360,height=220,left=40,top=40');
+    if (p) { p.document.open(); p.document.write('<!DOCTYPE html><meta charset="utf-8">'); p.document.close(); mount(p);
+      hint.textContent = 'Обычное мини-окно (в Firefox/Safari нет режима «поверх всех»).'; }
+    else hint.textContent = 'Браузер заблокировал всплывающее окно — разрешите попапы для этой страницы.';
+  }
+
+  btn.addEventListener('click', () => {
+    if (mini) { mini.renderer.stop(); try { mini.win.close(); } catch (e) {} mini = null; btn.textContent = 'Открыть в мини-окне'; }
+    else openMini();
+  });
+})();
+</script>
 </body>
 </html>
