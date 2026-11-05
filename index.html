@@ -1,71 +1,30 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Widgets 16:9 Light</title>
+  <title>W</title>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
+    body, html {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      background: #000; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
     }
-    body {
-      background: #000;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      overflow: hidden;
-    }
-
-    /* Контейнер 16:9 с чистой CSS-анимацией без нагрузки на CPU */
-    .box-16-9 {
-      position: relative;
-      width: 100vw;
-      max-width: 640px;
-      aspect-ratio: 16 / 9;
-      background: #08080c;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    .box {
+      width: 100vw; height: 100vh;
       border: 8px solid #ff0055;
-      animation: neonBorder 1.5s infinite alternate;
+      box-sizing: border-box;
+      display: flex; align-items: center; justify-content: center;
     }
-
-    @keyframes neonBorder {
-      0% { border-color: #ff0055; }
-      50% { border-color: #00ffcc; }
-      100% { border-color: #ffcc00; }
-    }
-
-    /* Анимированная надпись */
-    .text-banner {
-      background: #ff0055;
-      color: #ffffff;
-      font-family: Arial, sans-serif;
-      font-weight: 900;
-      font-size: 28px;
-      padding: 12px 30px;
-      border-radius: 20px;
-      letter-spacing: 2px;
-      animation: pulseText 1s infinite ease-in-out;
-      border: 2px solid #fff;
-    }
-
-    @keyframes pulseText {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.06); }
+    h1 {
+      color: #fff; font-family: Arial; font-size: 32px; font-weight: 900;
+      background: #ff0055; padding: 12px 24px; border-radius: 12px;
     }
   </style>
 </head>
 <body>
-
-  <!-- Блок 16:9 -->
-  <div class="box-16-9">
-    <div class="text-banner">ПОДПИШИТЕСЬ</div>
+  <div class="box">
+    <h1>ПОДПИШИТЕСЬ</h1>
   </div>
-
 </body>
 </html>
